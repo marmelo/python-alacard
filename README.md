@@ -51,7 +51,7 @@ Avoiding Repetition
 When you get tired of typing in you card number and password, you may create an alias.
 
 ```bash
-$ alias showmethemoney='python alacard.py -u 1234567890123456 -p 235711'
+$ alias showmethemoney='./alacard.py -u 1234567890123456 -p 235711'
 $ showmethemoney
 $ showmethemoney -m
 ```
