@@ -14,7 +14,7 @@ import ssl
 
 Card = collections.namedtuple('Card', ['card_holder_name', 'card_number', 'expiration_date',
                                        'outstanding_balance','current_balance', 'movements'])
-Movement = collections.namedtuple('Movement', ['id', 'date', 'type', 'description', 'credit', 'debit', 'balance'])
+Movement = collections.namedtuple('Movement', ['id', 'date', 'type', 'description', 'debit', 'credit', 'balance'])
 
 
 class Alacard:
@@ -99,7 +99,7 @@ class Alacard:
         print(header % card[:5])
 
         if card.movements:
-            movement_header = [('Id', 'Date', 'Type', 'Description', 'Credit', 'Debit', 'Balance')]
+            movement_header = [('Id', 'Date', 'Type', 'Description', 'Debit', 'Credit', 'Balance')]
             self.__print_table(movement_header + card.movements, ' | ')
 
     def __request(self, url, data=None, one_way=False, regexp=None):
@@ -145,7 +145,7 @@ if __name__ == "__main__":
     # parse arguments
     parser = argparse.ArgumentParser(description='Check Euroticket à la card balance and history.')
     parser.add_argument('-u', metavar='username', required=True, help='the card number')
-    parser.add_argument('-p', metavar='password', required=True, help='the card CVV number twice (unless you changed it!)')
+    parser.add_argument('-p', metavar='password', required=True, help='the card password')
     parser.add_argument('-m', action='store_true', required=False, help='display card movements')
     args = parser.parse_args()
 
