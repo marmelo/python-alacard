@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Python library to check Euroticket à la card balance and history.
+Python library to check Euroticket à la card balance and recent history.
 """
 
 import argparse
@@ -38,7 +38,6 @@ class Alacard:
     XPATH_MOV_CRED = 'td[5]/span'
     XPATH_MOV_DEBI = 'td[6]/span'
     XPATH_MOV_BALA = 'td[7]/span'
-
 
     def __init__(self):
         """Creates the HTTP processor with a cookie jar and an enforced SSLv3 protocol."""
