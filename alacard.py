@@ -5,11 +5,11 @@ Python library to check Euroticket à la card balance and history.
 
 import argparse
 import collections
-import html.parser
 import http.cookiejar
-import re
 import urllib
 import ssl
+from html.parser import HTMLParser
+from xml.etree import ElementTree
 
 
 Card = collections.namedtuple('Card', ['card_holder_name', 'card_number', 'expiration_date',
@@ -20,13 +20,25 @@ Movement = collections.namedtuple('Movement', ['id', 'date', 'type', 'descriptio
 class Alacard:
     """Python library to check Euroticket à la card balance and history."""
 
-    BASE_URL = 'https://www.euroticket-alacard.pt/'
-    MAIN_URL = 'jsp/portlet/c_index.jsp?_reset=true&_portal=www.alacard.pt'
-    AUTH_URL = 'jsp/portlet/consumer/jve/c_login.jsp'
-    HIST_URL = 'jsp/portlet/c_consumerprogram_home.jsp?section.jsp:section=account&' \
-               'page.jsp:page=consumer/account/c_alltransactions.jsp'
-    LOUT_URL = 'jsp/portlet/logout.jsp'
-    ENCODING = 'ISO-8859-1'
+    MAIN_URL = 'https://www.euroticket-alacard.pt/alc/pages/private/customer/customer.jsf'
+    AUTH_URL = 'https://www.euroticket-alacard.pt/alc/pages/login.jsf'
+    ENCODING = 'UTF-8'
+
+    XPATH_INPUTS = './/form[@id="loginform"]//input[@name]'
+    XPATH_NAME = './/table[@id="panelAcountData"]/tbody/tr/td[1]/table/tbody/tr[2]/td'
+    XPATH_CARD = './/table[@id="panelAcountData"]/tbody/tr/td[2]/table/tbody/tr[2]/td'
+    XPATH_DATE = './/table[@id="panelAcountData"]/tbody/tr/td[3]/table/tbody/tr[2]/td'
+    XPATH_OUTB = './/table[@class="balance"]/tbody/tr/td[1]/table/tbody/tr/td[2]'
+    XPATH_CURB = './/table[@class="balance"]/tbody/tr/td[2]/table/tbody/tr/td[2]'
+    XPATH_MOVS = './/table[@class="rf-dt"]/tbody/tr[@class]'
+    XPATH_MOV_ID = 'td[2]'
+    XPATH_MOV_DATE = 'td[1]'
+    XPATH_MOV_TYPE = 'td[3]'
+    XPATH_MOV_DESC = 'td[4]'
+    XPATH_MOV_CRED = 'td[5]/span'
+    XPATH_MOV_DEBI = 'td[6]/span'
+    XPATH_MOV_BALA = 'td[7]/span'
+
 
     def __init__(self):
         """Creates the HTTP processor with a cookie jar and an enforced SSLv3 protocol."""
@@ -37,55 +49,41 @@ class Alacard:
         cookie_processor = urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
         self.opener = urllib.request.build_opener(https_handler, cookie_processor)
         urllib.request.install_opener(self.opener)
-        # borrow the html parser's unescape
-        self.html_parser = html.parser.HTMLParser()
 
     def get(self, username, password, history=False):
         """Connects to à la card website, authenticates and retrieve your card details."""
 
-        # get main page and extract form fields and their values
+        # get main page
         # this is needed because there is an auto-generated field that must be submitted
-        regexp = '<input.*?name="(.*?)".*?(value="(.*?)".*?)?>'
-        fields = self.__request(self.BASE_URL + self.MAIN_URL, regexp=regexp)
+        dom = self.__request(self.MAIN_URL)
 
-        # build auth form
-        data = {}
-        for field in fields:
-            data[field[0]] = field[2]
-        data['consumer/jve/c_login.jsp:login_id_form'] = username
-        data['consumer/jve/c_login.jsp:password_form'] = password
+        # extract form fields and build auth form
+        data = {field.get('name'): field.get('value') for field in dom.findall(self.XPATH_INPUTS)}
+        data['loginform:username'] = username
+        data['loginform:password'] = password
 
         # authenticate and extract card data
-        regexp = '<tr>\s*?' \
-                 '<td class="formLabel">\s*(.*?)\s*</td>\s*' \
-                 '<td class="txt">\s*(.*?)\s*</td>\s*' \
-                 '</tr>'
-        info = self.__request(self.BASE_URL + self.AUTH_URL, data, regexp=regexp)
+        dom = self.__request(self.AUTH_URL, data)
 
         if history:
             # retrieve and extract card history
-            regexp = '<tr class="tablerowalt[12]">\s*?' + \
-                     '<td.*?>\s*(.*?)\s*</td>\s*' * 7 + \
-                     '</tr>'
-            movements = self.__request(self.BASE_URL + self.HIST_URL, regexp=regexp)
+            # TODO retrieve all the movements
+            movements = dom.findall(self.XPATH_MOVS)
         else:
             movements = []
 
-        # logout
-        self.__request(self.BASE_URL + self.LOUT_URL, one_way=True)
-
-        return Card(info[2][1],                                                     # card holder name
-                    info[3][1],                                                     # card number
-                    info[4][1],                                                     # card expiration date
-                    float(info[0][1].replace('€', '').replace(',', '.')),           # card outstanding balance
-                    float(info[1][1].replace('€', '').replace(',', '.')),           # card current balance
-                    [Movement(mov[1],                                               # movement id
-                              mov[0],                                               # movement date
-                              mov[2],                                               # movement type
-                              re.sub('.*: ', '', mov[3]),                           # movement description
-                              float(mov[4].replace('€', '').replace(',', '.')),     # movement credit
-                              float(mov[5].replace('€', '').replace(',', '.')),     # movement debit
-                              float(mov[6].replace('€', '').replace(',', '.')))     # movement balance
+        return Card(dom.findtext(self.XPATH_NAME).strip(),                  # card holder name
+                    dom.findtext(self.XPATH_CARD).strip(),                  # card number
+                    dom.findtext(self.XPATH_DATE).strip(),                  # card expiration date
+                    dom.findtext(self.XPATH_CURB).strip(),                  # card outstanding balance
+                    dom.findtext(self.XPATH_OUTB).strip(),                  # card current balance
+                    [Movement(mov.findtext(self.XPATH_MOV_ID).strip(),      # movement id
+                              mov.findtext(self.XPATH_MOV_DATE).strip(),    # movement date
+                              mov.findtext(self.XPATH_MOV_TYPE).strip(),    # movement type
+                              mov.findtext(self.XPATH_MOV_DESC).strip(),    # movement description
+                              mov.findtext(self.XPATH_MOV_CRED).strip(),    # movement credit
+                              mov.findtext(self.XPATH_MOV_DEBI).strip(),    # movement debit
+                              mov.findtext(self.XPATH_MOV_BALA).strip())    # movement balance
                      for mov in movements])
 
     def print(self, card):
@@ -95,14 +93,15 @@ class Alacard:
                   "Card Number:         %s\n"
                   "Expiration Date:     %s\n"
                   "Outstanding Balance: %s\n"
-                  "Current Balance:     %s\n")
+                  "Current Balance:     %s")
         print(header % card[:5])
 
         if card.movements:
+            print()
             movement_header = [('Id', 'Date', 'Type', 'Description', 'Debit', 'Credit', 'Balance')]
             self.__print_table(movement_header + card.movements, ' | ')
 
-    def __request(self, url, data=None, one_way=False, regexp=None):
+    def __request(self, url, data=None, one_way=False):
         """Creates and executes an HTTP request."""
 
         if data:
@@ -111,12 +110,11 @@ class Alacard:
             req = urllib.request.Request(url)
         res = self.opener.open(req)
         if not one_way:
-            html = res.read().decode(self.ENCODING)
-            html = self.html_parser.unescape(html)
-            if regexp:
-                return re.compile(regexp, re.DOTALL).findall(html)
-            else:
-                return html
+            html = res.read().decode(self.ENCODING)     # read and decode html
+            parser = NaiveHTMLParser()
+            dom = parser.feed(html)
+            parser.close()
+            return dom
 
     def __print_table(self, rows, separator=' '):
         """Print the card history in a tabular fashion."""
@@ -139,6 +137,49 @@ class Alacard:
         # print it
         for row in rows:
             print(pattern % row)
+
+
+class NaiveHTMLParser(HTMLParser):
+    """
+    Python 3.x HTMLParser extension with ElementTree support.
+    @see https://github.com/marmelo/python-htmlparser
+    """
+
+    def __init__(self):
+        self.root = None
+        self.tree = []
+        HTMLParser.__init__(self)
+
+    def feed(self, data):
+        HTMLParser.feed(self, data)
+        return self.root
+
+    def handle_starttag(self, tag, attrs):
+        if len(self.tree) == 0:
+            element = ElementTree.Element(tag, dict(self.__filter_attrs(attrs)))
+            self.tree.append(element)
+            self.root = element
+        else:
+            element = ElementTree.SubElement(self.tree[-1], tag, dict(self.__filter_attrs(attrs)))
+            self.tree.append(element)
+
+    def handle_endtag(self, tag):
+        self.tree.pop()
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+        self.handle_endtag(tag)
+        pass
+
+    def handle_data(self, data):
+        if self.tree:
+            self.tree[-1].text = data
+
+    def get_root_element(self):
+        return self.root
+
+    def __filter_attrs(self, attrs):
+        return filter(lambda x: x[0] and x[1], attrs) if attrs else []
 
 
 if __name__ == "__main__":
