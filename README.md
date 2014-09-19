@@ -1,9 +1,11 @@
 python-alacard
 ==============
 
-Python library to check Euroticket à la card balance and recent history.
-
+Python library to check Euroticket à la card balance and recent history.  
 https://www.euroticket-alacard.pt/
+
+This implementation simulates the browser's behaviour using standard HTTP requests along with screen scraping.
+After official mobile apps being released the best way to retrieve this information is to use the REST API described in my [euroticket-alacard-rest-api](https://github.com/marmelo/euroticket-alacard-rest-api) repository.
 
 Requirements
 -----
